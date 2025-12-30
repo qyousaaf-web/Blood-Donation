@@ -14,24 +14,17 @@ st.set_page_config(
 # ====================== RESPONSIVE & BEAUTIFUL CSS ======================
 st.markdown("""
 <style>
-    /* Main container padding for mobile */
     .main .block-container {
         padding-top: 1rem;
         padding-left: 1rem;
         padding-right: 1rem;
     }
 
-    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #d32f2f, #ff4b4b);
         color: white;
     }
 
-    [data-testid="stSidebar"] .css-1d391kg {
-        padding-top: 1rem;
-    }
-
-    /* Sidebar navigation items */
     .stRadio > div {
         gap: 0.8rem;
     }
@@ -51,14 +44,12 @@ st.markdown("""
         transform: translateX(8px);
     }
 
-    /* Selected radio item */
     div[data-testid="stSidebar"] div[role="radiogroup"] label[data-checked="true"] {
         background-color: rgba(255, 255, 255, 0.3) !important;
         font-weight: bold;
         box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     }
 
-    /* Header styling */
     h1 {
         text-align: center;
         color: #d32f2f;
@@ -67,12 +58,9 @@ st.markdown("""
     }
 
     @media (max-width: 768px) {
-        h1 {
-            font-size: 2rem;
-        }
+        h1 { font-size: 2rem; }
     }
 
-    /* Metrics responsive grid */
     .stMetric {
         background-color: #ffe0e0;
         border-radius: 16px;
@@ -93,14 +81,19 @@ st.markdown("""
         color: #c62828;
     }
 
-    /* Dataframe responsive */
+    @media (max-width: 768px) {
+        [data-testid="metric-container"] {
+            width: 100% !important;
+            margin-bottom: 1rem;
+        }
+    }
+
     .stDataFrame {
         border-radius: 12px;
         overflow: hidden;
         box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
 
-    /* Form inputs */
     .stTextInput > div > div > input,
     .stSelectbox > div > div > select,
     .stNumberInput > div > div > input {
@@ -109,7 +102,6 @@ st.markdown("""
         padding: 0.8rem;
     }
 
-    /* Buttons */
     .stButton > button {
         background-color: #d32f2f;
         color: white;
@@ -129,7 +121,6 @@ st.markdown("""
         box-shadow: 0 8px 20px rgba(211, 47, 47, 0.4);
     }
 
-    /* Empty state messages */
     .stInfo, .stSuccess {
         border-radius: 12px;
         padding: 1.5rem;
@@ -138,7 +129,6 @@ st.markdown("""
         border-left: 6px solid #d32f2f;
     }
 
-    /* Footer */
     .footer {
         text-align: center;
         padding: 2rem 1rem;
@@ -225,7 +215,7 @@ def get_conn():
 
 conn = get_conn()
 
-# ====================== RESPONSIVE SIDEBAR NAVIGATION ======================
+# ====================== SIDEBAR NAVIGATION WITH SEARCH ======================
 with st.sidebar:
     st.markdown("<h2 style='color: white; text-align: center;'>🩸 Menu</h2>", unsafe_allow_html=True)
     st.markdown("---")
@@ -234,34 +224,35 @@ with st.sidebar:
         "",
         [
             "🏠 Dashboard",
+            "➕ Add Donation",
+            "🔍 Search Donor",           # NEW: Donor Search
+            "📝 Add Hospital Request",
             "🩺 Blood Inventory",
             "🚨 Urgent Requests",
             "⏳ Expiring Soon",
-            "➕ Add Donation",
             "👥 Donors",
-            "🏥 Hospital Requests",
-            "📝 Add Hospital Request"
+            "🏥 Hospital Requests"
         ],
         label_visibility="collapsed"
     )
 
-# ====================== RESPONSIVE CONTENT ======================
+# ====================== PAGE CONTENT ======================
 if page == "🏠 Dashboard":
     st.header("📊 Dashboard Overview")
+    col1, col2, col3, col4 = st.columns(4)
 
-    # Responsive metrics grid
-    cols = st.columns(4 if st.get_option("client.width") > 768 else 2)
-    metrics = [
-        ("🩸 Available Bags", "SELECT COUNT(*) FROM blood_inventory WHERE status='available'"),
-        ("🚨 Urgent Requests", "SELECT COUNT(*) FROM hospital_requests WHERE urgency IN ('urgent','emergency') AND status='pending'"),
-        ("👥 Registered Donors", "SELECT COUNT(*) FROM donors"),
-        ("⏳ Expiring Soon", "SELECT COUNT(*) FROM blood_inventory WHERE status='available' AND expiry_date <= date('now','+7 days')")
-    ]
-
-    for col, (label, query) in zip(cols, metrics):
-        with col:
-            value = pd.read_sql(query, conn).iloc[0,0]
-            st.metric(label, value)
+    with col1:
+        total = pd.read_sql("SELECT COUNT(*) FROM blood_inventory WHERE status='available'", conn).iloc[0,0]
+        st.metric("🩸 Available Bags", total)
+    with col2:
+        urgent = pd.read_sql("SELECT COUNT(*) FROM hospital_requests WHERE urgency IN ('urgent','emergency') AND status='pending'", conn).iloc[0,0]
+        st.metric("🚨 Urgent Requests", urgent)
+    with col3:
+        donors = pd.read_sql("SELECT COUNT(*) FROM donors", conn).iloc[0,0]
+        st.metric("👥 Registered Donors", donors)
+    with col4:
+        expiring = pd.read_sql("SELECT COUNT(*) FROM blood_inventory WHERE status='available' AND expiry_date <= date('now','+7 days')", conn).iloc[0,0]
+        st.metric("⏳ Expiring Soon", expiring)
 
     st.markdown("### 🩸 Available Blood by Type")
     avail = pd.read_sql("""
@@ -274,6 +265,29 @@ if page == "🏠 Dashboard":
         st.info("No blood in inventory yet. Start by adding a donation! ➕")
     else:
         st.dataframe(avail, use_container_width=True)
+
+elif page == "🔍 Search Donor":
+    st.header("🔍 Search Donor")
+    search_term = st.text_input("Enter Donor Name or Phone Number", placeholder="e.g. John or 123-456")
+
+    if search_term:
+        query = """
+        SELECT name, blood_type, phone, last_donation_date 
+        FROM donors 
+        WHERE LOWER(name) LIKE LOWER(?) 
+           OR phone LIKE ?
+        ORDER BY name
+        """
+        pattern = f"%{search_term}%"
+        results = pd.read_sql(query, conn, params=(pattern, pattern))
+        
+        if results.empty:
+            st.warning("No donors found matching your search.")
+        else:
+            st.success(f"Found {len(results)} donor(s)")
+            st.dataframe(results, use_container_width=True)
+    else:
+        st.info("Type a name or phone number to search for donors.")
 
 elif page == "🩺 Blood Inventory":
     st.header("🩺 Blood Inventory")
@@ -393,7 +407,7 @@ elif page == "📝 Add Hospital Request":
 st.markdown("---")
 st.markdown("""
 <div class="footer">
-    <p>❤️ <strong>Blood Donation Management System</strong> • Responsive • Beautiful • Built to Save Lives</p>
+    <p>❤️ <strong>Blood Donation Management System</strong> • With Donor Search • Responsive • Beautiful</p>
     <p>December 30, 2025</p>
 </div>
 """, unsafe_allow_html=True)
